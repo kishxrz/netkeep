@@ -1,0 +1,154 @@
+! =========================================================
+! NetKeep Cyber Cafe — Cisco 2911 Router Master Configuration
+! =========================================================
+! Ready to copy-paste into Cisco Packet Tracer CLI
+! Features: Router-on-a-Stick, Multi-VLAN DHCP Pools, NAT Overload, Extended ACLs
+! =========================================================
+
+enable
+configure terminal
+
+hostname NetKeep-Router
+no ip domain-lookup
+banner motd ^C
+*************************************************************
+* WARNING: Authorized NetKeep Cyber Cafe Gateway Access Only *
+*************************************************************
+^C
+
+! ---------------------------------------------------------
+! 1. WAN Interface Configuration (Connected to ISP)
+! ---------------------------------------------------------
+interface GigabitEthernet0/0
+ description WAN-Connection-to-ISP
+ ip address 203.0.113.2 255.255.255.252
+ ip nat outside
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 2. LAN Physical Interface (Trunk Link to Switch)
+! ---------------------------------------------------------
+interface GigabitEthernet0/1
+ description 802.1Q-Trunk-to-Catalyst-Switch
+ no ip address
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 3. Sub-Interfaces for Inter-VLAN Routing (802.1Q)
+! ---------------------------------------------------------
+! VLAN 10: Management & Edge Server
+interface GigabitEthernet0/1.10
+ description VLAN-10-Admin-Server
+ encapsulation dot1Q 10
+ ip address 192.168.10.1 255.255.255.0
+ ip nat inside
+exit
+
+! VLAN 20: VIP Gaming Workstations
+interface GigabitEthernet0/1.20
+ description VLAN-20-Gaming-Rigs
+ encapsulation dot1Q 20
+ ip address 192.168.20.1 255.255.255.0
+ ip nat inside
+exit
+
+! VLAN 30: Standard Browsing PCs
+interface GigabitEthernet0/1.30
+ description VLAN-30-Standard-Workstations
+ encapsulation dot1Q 30
+ ip address 192.168.30.1 255.255.255.0
+ ip nat inside
+exit
+
+! VLAN 40: Public Guest Wi-Fi Zone
+interface GigabitEthernet0/1.40
+ description VLAN-40-Guest-WiFi
+ encapsulation dot1Q 40
+ ip address 192.168.40.1 255.255.255.0
+ ip nat inside
+exit
+
+! VLAN 50: Printers & NAS
+interface GigabitEthernet0/1.50
+ description VLAN-50-Printers-Storage
+ encapsulation dot1Q 50
+ ip address 192.168.50.1 255.255.255.0
+ ip nat inside
+exit
+
+! ---------------------------------------------------------
+! 4. DHCP Server Configuration & Pools
+! ---------------------------------------------------------
+ip dhcp excluded-address 192.168.10.1 192.168.10.20
+ip dhcp excluded-address 192.168.20.1 192.168.20.10
+ip dhcp excluded-address 192.168.30.1 192.168.30.10
+ip dhcp excluded-address 192.168.40.1 192.168.40.10
+
+! Admin Pool
+ip dhcp pool VLAN10_ADMIN
+ network 192.168.10.0 255.255.255.0
+ default-router 192.168.10.1
+ dns-server 8.8.8.8 1.1.1.1
+ lease 1
+
+! Gaming Workstations Pool
+ip dhcp pool VLAN20_GAMING
+ network 192.168.20.0 255.255.255.0
+ default-router 192.168.20.1
+ dns-server 1.1.1.1 8.8.8.8
+ lease 0 12
+
+! Standard Browsing Pool
+ip dhcp pool VLAN30_STANDARD
+ network 192.168.30.0 255.255.255.0
+ default-router 192.168.30.1
+ dns-server 8.8.8.8
+ lease 0 8
+
+! Guest Wi-Fi Pool
+ip dhcp pool VLAN40_GUEST
+ network 192.168.40.0 255.255.255.0
+ default-router 192.168.40.1
+ dns-server 8.8.8.8
+ lease 0 2
+
+! ---------------------------------------------------------
+! 5. Extended Access Control List (Guest Wi-Fi Isolation)
+! ---------------------------------------------------------
+ip access-list extended GUEST_SECURITY_POLICY
+ remark Deny Guest Wi-Fi access to Admin / Server Subnet
+ deny ip 192.168.40.0 0.0.0.255 192.168.10.0 0.0.0.255
+ remark Deny Guest Wi-Fi access to Gaming Workstations
+ deny ip 192.168.40.0 0.0.0.255 192.168.20.0 0.0.0.255
+ remark Deny Guest Wi-Fi access to Standard Workstations
+ deny ip 192.168.40.0 0.0.0.255 192.168.30.0 0.0.0.255
+ remark Deny Guest Wi-Fi access to Printers / Storage
+ deny ip 192.168.40.0 0.0.0.255 192.168.50.0 0.0.0.255
+ remark Allow all outbound Internet traffic for guests
+ permit ip 192.168.40.0 0.0.0.255 any
+exit
+
+interface GigabitEthernet0/1.40
+ ip access-group GUEST_SECURITY_POLICY in
+exit
+
+! ---------------------------------------------------------
+! 6. NAT Overload (PAT) Configuration
+! ---------------------------------------------------------
+access-list 1 permit 192.168.10.0 0.0.0.255
+access-list 1 permit 192.168.20.0 0.0.0.255
+access-list 1 permit 192.168.30.0 0.0.0.255
+access-list 1 permit 192.168.40.0 0.0.0.255
+access-list 1 permit 192.168.50.0 0.0.0.255
+
+ip nat inside source list 1 interface GigabitEthernet0/0 overload
+
+! ---------------------------------------------------------
+! 7. Static Default Route to ISP
+! ---------------------------------------------------------
+ip route 0.0.0.0 0.0.0.0 203.0.113.1
+
+end
+write memory

@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.pytest_cache/
+
+# Databases & local SQLite state (Strictly exclude local databases)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+netkeep_local.db*
+netkeep_cloud.db*
+
+# Environment variables & secrets (CRITICAL: Never commit secrets to git)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Explicitly keep example environment templates
+!.env.example
+!*/.env.example
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# TypeScript & IDE
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

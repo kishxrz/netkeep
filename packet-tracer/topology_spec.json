@@ -1,0 +1,67 @@
+{
+  "project_name": "NetKeep Cyber Cafe Network Topology",
+  "version": "1.0.0",
+  "created_for": "Cisco Packet Tracer 8.x / 7.x",
+  "wan": {
+    "isp_router_ip": "203.0.113.1/30",
+    "cafe_router_public_ip": "203.0.113.2/30",
+    "nat_mode": "PAT (NAT Overload)"
+  },
+  "vlans": [
+    {
+      "id": 10,
+      "name": "Admin_Management",
+      "subnet": "192.168.10.0/24",
+      "gateway": "192.168.10.1",
+      "switch_ports": "Fa0/1 - Fa0/4",
+      "dhcp_enabled": true,
+      "dhcp_pool": "VLAN10_ADMIN",
+      "critical_nodes": [
+        { "name": "Edge-Server", "ip": "192.168.10.10", "type": "FastAPI SQLite Host" },
+        { "name": "Admin-POS-01", "ip": "192.168.10.11", "type": "Front Desk Kiosk" }
+      ]
+    },
+    {
+      "id": 20,
+      "name": "VIP_Gaming",
+      "subnet": "192.168.20.0/24",
+      "gateway": "192.168.20.1",
+      "switch_ports": "Fa0/5 - Fa0/12",
+      "dhcp_enabled": true,
+      "dhcp_pool": "VLAN20_GAMING",
+      "features": ["Port Security (Max 2 MACs)", "PortFast", "CBWFQ QoS Target"]
+    },
+    {
+      "id": 30,
+      "name": "Standard_Browsing",
+      "subnet": "192.168.30.0/24",
+      "gateway": "192.168.30.1",
+      "switch_ports": "Fa0/13 - Fa0/18",
+      "dhcp_enabled": true,
+      "dhcp_pool": "VLAN30_STANDARD",
+      "features": ["PortFast", "Standard Internet Rate-Limiting"]
+    },
+    {
+      "id": 40,
+      "name": "Guest_WiFi",
+      "subnet": "192.168.40.0/24",
+      "gateway": "192.168.40.1",
+      "switch_ports": "Fa0/19 - Fa0/22",
+      "dhcp_enabled": true,
+      "dhcp_pool": "VLAN40_GUEST",
+      "features": ["Extended ACL Isolation", "2-hour lease time", "No LAN access"]
+    },
+    {
+      "id": 50,
+      "name": "Printers_NAS",
+      "subnet": "192.168.50.0/24",
+      "gateway": "192.168.50.1",
+      "switch_ports": "Fa0/23 - Fa0/24",
+      "dhcp_enabled": false,
+      "critical_nodes": [
+        { "name": "Laser-Printer-01", "ip": "192.168.50.10", "type": "Network Printer" },
+        { "name": "Game-Cache-NAS", "ip": "192.168.50.20", "type": "Local Steam/Riot Cache" }
+      ]
+    }
+  ]
+}

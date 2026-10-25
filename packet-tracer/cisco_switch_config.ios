@@ -1,0 +1,127 @@
+! =========================================================
+! NetKeep Cyber Cafe — Cisco Catalyst 2960 Switch Configuration
+! =========================================================
+! Ready to copy-paste into Cisco Packet Tracer Switch CLI
+! Features: 802.1Q Trunking, VLAN Allocation, Port Security, Spanning-Tree PortFast
+! =========================================================
+
+enable
+configure terminal
+
+hostname NetKeep-Switch
+no ip domain-lookup
+
+! ---------------------------------------------------------
+! 1. Define VLAN Database
+! ---------------------------------------------------------
+vlan 10
+ name Admin_Management
+exit
+
+vlan 20
+ name VIP_Gaming
+exit
+
+vlan 30
+ name Standard_Browsing
+exit
+
+vlan 40
+ name Guest_WiFi
+exit
+
+vlan 50
+ name Printers_NAS
+exit
+
+! ---------------------------------------------------------
+! 2. Configure 802.1Q Trunk Uplink to Router
+! ---------------------------------------------------------
+interface GigabitEthernet0/1
+ description Trunk-Uplink-to-Router-Gig0/1
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30,40,50
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 3. Configure VLAN 10 Ports (Admin & Local Edge Server)
+! ---------------------------------------------------------
+! FastEthernet 0/1: Edge Server Appliance
+! FastEthernet 0/2: Front Desk POS PC
+! FastEthernet 0/3-4: CCTV & Manager
+interface range FastEthernet0/1 - 4
+ description Admin-and-Server-Access-Ports
+ switchport mode access
+ switchport access vlan 10
+ spanning-tree portfast
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 4. Configure VLAN 20 Ports (VIP Gaming Workstations)
+! ---------------------------------------------------------
+! FastEthernet 0/5 - 12: Gaming Rigs 01 to 08
+interface range FastEthernet0/5 - 12
+ description Gaming-Rig-Terminals
+ switchport mode access
+ switchport access vlan 20
+ spanning-tree portfast
+ ! Enable Port Security to prevent rogue device swapping
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security aging time 10
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 5. Configure VLAN 30 Ports (Standard Browsing Workstations)
+! ---------------------------------------------------------
+! FastEthernet 0/13 - 18: Standard PCs 01 to 06
+interface range FastEthernet0/13 - 18
+ description Standard-Browsing-PCs
+ switchport mode access
+ switchport access vlan 30
+ spanning-tree portfast
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 6. Configure VLAN 40 Ports (Guest Wi-Fi Access Points)
+! ---------------------------------------------------------
+! FastEthernet 0/19 - 22: Cafe Wireless Access Points
+interface range FastEthernet0/19 - 22
+ description Guest-Wireless-Access-Points
+ switchport mode access
+ switchport access vlan 40
+ spanning-tree portfast
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 7. Configure VLAN 50 Ports (Network Printers & Storage NAS)
+! ---------------------------------------------------------
+! FastEthernet 0/23: High-Speed Laser Printer
+! FastEthernet 0/24: Local Game Cache NAS
+interface range FastEthernet0/23 - 24
+ description Printers-and-LAN-Storage
+ switchport mode access
+ switchport access vlan 50
+ spanning-tree portfast
+ no shutdown
+exit
+
+! ---------------------------------------------------------
+! 8. Switch Management SVI (Switch Virtual Interface)
+! ---------------------------------------------------------
+interface vlan 10
+ description Management-SVI
+ ip address 192.168.10.2 255.255.255.0
+ no shutdown
+exit
+
+ip default-gateway 192.168.10.1
+
+end
+write memory
