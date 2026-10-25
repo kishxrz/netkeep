@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { db, getLastSuccessfulSyncTime } from "../lib/db";
 import { OutboxEntry } from "../lib/types";
 import { syncOutboxOrders, manualRetryOrder } from "../lib/syncWorker";
+import { getCloudApiUrl, getLocalApiUrl, getActiveApiUrl, getHealthCheckUrl } from "../lib/apiConfig";
 
 interface ServiceHealth {
   status: "checking" | "online" | "offline" | "error";
@@ -19,21 +20,21 @@ interface NetworkSyncStatusProps {
 }
 
 export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncStatusProps) {
-  const LOCAL_API_URL = process.env.NEXT_PUBLIC_LOCAL_API_URL || (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8000/api/v1" : "");
-  const CLOUD_API_URL = process.env.NEXT_PUBLIC_CLOUD_API_URL || (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8001/api/v1" : "");
+  const LOCAL_API_URL = getLocalApiUrl();
+  const CLOUD_API_URL = getCloudApiUrl();
 
   // Real Service Health States
   const [localHealth, setLocalHealth] = useState<ServiceHealth>({
     status: "checking",
     latencyMs: null,
-    endpoint: LOCAL_API_URL ? `${LOCAL_API_URL}/health` : "Unconfigured",
+    endpoint: LOCAL_API_URL ? getHealthCheckUrl(LOCAL_API_URL) : "Unconfigured",
     lastChecked: null
   });
 
   const [cloudHealth, setCloudHealth] = useState<ServiceHealth>({
     status: "checking",
     latencyMs: null,
-    endpoint: CLOUD_API_URL ? `${CLOUD_API_URL}/health` : "Unconfigured",
+    endpoint: CLOUD_API_URL ? getHealthCheckUrl(CLOUD_API_URL) : "Unconfigured",
     lastChecked: null
   });
 
@@ -109,13 +110,15 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
       return;
     }
 
+    const healthUrl = getHealthCheckUrl(LOCAL_API_URL);
+
     if (simulatedLanFailure) {
       setLocalHealth({
         status: "offline",
         latencyMs: null,
         statusCode: 0,
         message: "SIMULATED OUTAGE: Edge server disconnected via Demo Mode sandbox",
-        endpoint: `${LOCAL_API_URL}/health`,
+        endpoint: healthUrl,
         lastChecked: new Date()
       });
       return;
@@ -123,7 +126,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
 
     const start = performance.now();
     try {
-      const res = await fetch(`${LOCAL_API_URL}/health`, {
+      const res = await fetch(healthUrl, {
         cache: "no-store",
         signal: AbortSignal.timeout(3500)
       });
@@ -136,7 +139,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
           latencyMs: latency,
           statusCode: res.status,
           message: data.mode ? `FastAPI Edge Server (${data.mode})` : "HTTP 200 OK — Healthy",
-          endpoint: `${LOCAL_API_URL}/health`,
+          endpoint: healthUrl,
           lastChecked: new Date()
         });
       } else {
@@ -145,7 +148,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
           latencyMs: latency,
           statusCode: res.status,
           message: `HTTP ${res.status} ${res.statusText}`,
-          endpoint: `${LOCAL_API_URL}/health`,
+          endpoint: healthUrl,
           lastChecked: new Date()
         });
       }
@@ -156,7 +159,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
         latencyMs: null,
         statusCode: 0,
         message: isTimeout ? "Connection Timed Out (>3500ms)" : "LAN Edge Server Unreachable",
-        endpoint: `${LOCAL_API_URL}/health`,
+        endpoint: healthUrl,
         lastChecked: new Date()
       });
     }
@@ -176,13 +179,15 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
       return;
     }
 
+    const healthUrl = getHealthCheckUrl(CLOUD_API_URL);
+
     if (simulatedCloudFailure) {
       setCloudHealth({
         status: "offline",
         latencyMs: null,
         statusCode: 0,
         message: "SIMULATED OUTAGE: WAN/Internet drop simulated via Demo Mode",
-        endpoint: `${CLOUD_API_URL}/health`,
+        endpoint: healthUrl,
         lastChecked: new Date()
       });
       return;
@@ -190,7 +195,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
 
     const start = performance.now();
     try {
-      const res = await fetch(`${CLOUD_API_URL}/health`, {
+      const res = await fetch(healthUrl, {
         cache: "no-store",
         signal: AbortSignal.timeout(4000)
       });
@@ -203,7 +208,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
           latencyMs: latency,
           statusCode: res.status,
           message: data.database ? `Supabase Cloud (${data.database})` : "HTTP 200 OK — Cloud Connected",
-          endpoint: `${CLOUD_API_URL}/health`,
+          endpoint: healthUrl,
           lastChecked: new Date()
         });
       } else {
@@ -212,7 +217,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
           latencyMs: latency,
           statusCode: res.status,
           message: `HTTP ${res.status} ${res.statusText}`,
-          endpoint: `${CLOUD_API_URL}/health`,
+          endpoint: healthUrl,
           lastChecked: new Date()
         });
       }
@@ -223,7 +228,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
         latencyMs: null,
         statusCode: 0,
         message: isTimeout ? "WAN Timeout (>4000ms)" : "Cloud Central API Unreachable (WAN Offline)",
-        endpoint: `${CLOUD_API_URL}/health`,
+        endpoint: healthUrl,
         lastChecked: new Date()
       });
     }
@@ -291,7 +296,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
       if (onManualSyncTrigger) {
         await onManualSyncTrigger();
       } else {
-        const targetSyncUrl = LOCAL_API_URL || CLOUD_API_URL || "http://localhost:8000/api/v1";
+        const targetSyncUrl = getActiveApiUrl();
         const result = await syncOutboxOrders(targetSyncUrl);
         showNotice(`Sync cycle complete: Synced ${result.syncedCount} record(s).`);
       }
@@ -307,7 +312,7 @@ export default function NetworkSyncStatus({ onManualSyncTrigger }: NetworkSyncSt
   // Handle Individual Event Retry
   const handleEventRetry = async (orderId: string) => {
     showNotice(`Attempting sync retry for order ${orderId.slice(0, 8)}...`);
-    const targetSyncUrl = LOCAL_API_URL || CLOUD_API_URL || "http://localhost:8000/api/v1";
+    const targetSyncUrl = getActiveApiUrl();
     const ok = await manualRetryOrder(orderId, targetSyncUrl);
     if (ok) {
       showNotice("✓ Order successfully synchronized with server acknowledgment!");

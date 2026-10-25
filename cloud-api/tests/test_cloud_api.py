@@ -323,3 +323,50 @@ def test_sync_event_deduplication(client):
     assert res2.status_code == 200
     assert res2.json()["processed_count"] == 0
     assert res2.json()["skipped_duplicates"] == 1
+
+
+# ==============================================================================
+# 9. VERCEL CORS & CLIENT OUTBOX SYNC TESTS
+# ==============================================================================
+def test_vercel_cors_origin_allowed(client):
+    """Verifies that Vercel preview and production origins are accepted by CORS regex."""
+    headers = {
+        "Origin": "https://netkeep-frontend-preview.vercel.app",
+        "Access-Control-Request-Method": "GET"
+    }
+    res = client.options("/health", headers=headers)
+    assert res.headers.get("access-control-allow-origin") == "https://netkeep-frontend-preview.vercel.app"
+
+    # Unauthorized external origin should NOT receive access-control-allow-origin
+    bad_headers = {
+        "Origin": "https://malicious-site.com",
+        "Access-Control-Request-Method": "GET"
+    }
+    bad_res = client.options("/health", headers=bad_headers)
+    assert bad_res.headers.get("access-control-allow-origin") is None
+
+
+def test_client_outbox_order_sync(client):
+    """Verifies direct client outbox sync acknowledgment for cloud-direct POS operations."""
+    order_id = str(uuid.uuid4())
+    payload = {
+        "id": order_id,
+        "order_code": "ORD-20261025-001",
+        "total_paise": 25000,
+        "items": []
+    }
+
+    # Test both /pos/orders/sync and /api/v1/pos/orders/sync
+    res1 = client.post("/pos/orders/sync", json=payload)
+    assert res1.status_code == 200
+    ack1 = res1.json()
+    assert ack1["acknowledged"] is True
+    assert ack1["order_id"] == order_id
+    assert ack1["mode"] == "cloud_direct"
+
+    res2 = client.post("/api/v1/pos/orders/sync", json=payload)
+    assert res2.status_code == 200
+    ack2 = res2.json()
+    assert ack2["acknowledged"] is True
+    assert ack2["order_id"] == order_id
+

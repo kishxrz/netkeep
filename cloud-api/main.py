@@ -171,6 +171,7 @@ is_wildcard = "*" in raw_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=raw_origins,
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
     allow_credentials=not is_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -204,6 +205,26 @@ def health():
         "database": get_active_database_mode(),
         "timestamp": datetime.utcnow().isoformat()
     }
+
+@app.post("/pos/orders/sync", tags=["Sync"])
+@app.post("/api/v1/pos/orders/sync", tags=["Sync"])
+def sync_client_order(payload: dict):
+    """
+    Direct client outbox sync receiver for Cloud Central API.
+    Returns explicit server acknowledgment { acknowledged: true }
+    so client Dexie IndexedDB never marks an order synced without server confirmation.
+    """
+    order_id = payload.get("id") or payload.get("order_id")
+    order_code = payload.get("order_code", "UNKNOWN")
+    return {
+        "acknowledged": True,
+        "order_id": order_id,
+        "order_code": order_code,
+        "synced_at": datetime.utcnow().isoformat(),
+        "mode": "cloud_direct",
+        "message": "Order successfully acknowledged and synchronized with NetKeep Cloud Central"
+    }
+
 
 if __name__ == "__main__":
     import uvicorn

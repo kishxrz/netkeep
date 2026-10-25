@@ -20,6 +20,7 @@ import {
   rupeesToPaise
 } from "../lib/pricing";
 import { syncOutboxOrders, manualRetryOrder } from "../lib/syncWorker";
+import { getCloudApiUrl, getLocalApiUrl, getActiveApiUrl, getHealthCheckUrl } from "../lib/apiConfig";
 import ReceiptModal from "../components/ReceiptModal";
 import NetworkSyncStatus from "../components/NetworkSyncStatus";
 function generateOrderUUID(): string {
@@ -34,9 +35,10 @@ function generateOrderUUID(): string {
 }
 
 export default function NetKeepCafePOS() {
-  const LOCAL_API_URL = process.env.NEXT_PUBLIC_LOCAL_API_URL || (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8000/api/v1" : "");
-  const CLOUD_API_URL = process.env.NEXT_PUBLIC_CLOUD_API_URL || (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8001/api/v1" : "");
-  const API_URL = LOCAL_API_URL || CLOUD_API_URL || "http://localhost:8000/api/v1";
+  const LOCAL_API_URL = getLocalApiUrl();
+  const CLOUD_API_URL = getCloudApiUrl();
+  const API_URL = getActiveApiUrl();
+
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<"pos" | "orders" | "inventory" | "network">("pos");
@@ -114,7 +116,8 @@ export default function NetKeepCafePOS() {
   const checkHealth = useCallback(async () => {
     const start = performance.now();
     try {
-      const res = await fetch(`${API_URL}/health`, { cache: "no-store" });
+      const healthUrl = getHealthCheckUrl(API_URL);
+      const res = await fetch(healthUrl, { cache: "no-store" });
       if (res.ok) {
         setIsBackendOnline(true);
         setBackendLatency(Math.round(performance.now() - start));
