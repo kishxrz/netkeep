@@ -370,3 +370,24 @@ def test_client_outbox_order_sync(client):
     assert ack2["acknowledged"] is True
     assert ack2["order_id"] == order_id
 
+
+def test_menu_items_retrieval(client):
+    """Verifies public menu endpoint responds with integer paise menu items."""
+    res1 = client.get("/menu")
+    assert res1.status_code == 200
+    items1 = res1.json()
+    assert len(items1) >= 2
+    assert "price_paise" in items1[0]
+    assert "sku" in items1[0]
+
+    res2 = client.get("/api/v1/menu?category=Coffee")
+    assert res2.status_code == 200
+    items2 = res2.json()
+    assert all("coffee" in i["category"].lower() for i in items2)
+
+    res3 = client.get("/api/v1/cafes/cafe-blr-01/menu")
+    assert res3.status_code == 200
+    items3 = res3.json()
+    assert len(items3) >= 1
+
+

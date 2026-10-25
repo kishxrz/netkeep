@@ -59,10 +59,12 @@ export default function NetKeepCafePOS() {
 
   // Network & Sync State
   const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
+  const [healthCheckStatus, setHealthCheckStatus] = useState<"checking" | "online" | "offline">("checking");
   const [backendLatency, setBackendLatency] = useState<number>(0);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isMenuLoading, setIsMenuLoading] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -72,9 +74,13 @@ export default function NetKeepCafePOS() {
 
   // 1. Initialize Dexie IndexedDB & Seed Menu Cache
   const loadLocalDatabase = useCallback(async () => {
+    setIsMenuLoading(true);
     try {
-      await seedMenuCacheIfEmpty();
-      const cached = await db.menu_cache.toArray();
+      let cached = await db.menu_cache.toArray();
+      if (cached.length === 0) {
+        await seedMenuCacheIfEmpty();
+        cached = await db.menu_cache.toArray();
+      }
       setMenuItems(cached);
 
       const localOrders = await getAllOrdersWithItems();
@@ -87,10 +93,59 @@ export default function NetKeepCafePOS() {
       setLastSyncTime(lastTime);
     } catch (err: unknown) {
       console.error("IndexedDB initialization error:", err);
+    } finally {
+      setIsMenuLoading(false);
     }
   }, []);
 
-  // 2. Trigger Outbox Sync (Requires explicit server acknowledgment)
+  // 2. Fetch live menu from server and update local cache (Offline-first sync)
+  const syncMenuWithServer = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/menu`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(4000)
+      });
+      if (res.ok) {
+        const serverItems = await res.json();
+        if (Array.isArray(serverItems) && serverItems.length > 0) {
+          for (const sItem of serverItems) {
+            const existing = await db.menu_cache.where("sku").equals(sItem.sku).first();
+            if (existing) {
+              await db.menu_cache.update(existing.id!, {
+                name: sItem.name,
+                category: sItem.category,
+                price_paise: sItem.price_paise,
+                stock: sItem.stock,
+                low_stock_threshold: sItem.low_stock_threshold,
+                is_available: sItem.is_available,
+                description: sItem.description || existing.description,
+                updated_at: new Date().toISOString()
+              });
+            } else {
+              await db.menu_cache.put({
+                sku: sItem.sku,
+                name: sItem.name,
+                category: sItem.category,
+                price_paise: sItem.price_paise,
+                stock: sItem.stock,
+                low_stock_threshold: sItem.low_stock_threshold,
+                is_available: sItem.is_available,
+                description: sItem.description,
+                updated_at: new Date().toISOString()
+              });
+            }
+          }
+          const updated = await db.menu_cache.toArray();
+          setMenuItems(updated);
+        }
+      }
+    } catch (err: unknown) {
+      // Graceful offline fallback: keep IndexedDB cached menu items
+      console.warn("Server menu sync skipped (using IndexedDB cache):", err);
+    }
+  }, [API_URL]);
+
+  // 3. Trigger Outbox Sync (Requires explicit server acknowledgment)
   const runSyncCycle = useCallback(async () => {
     if (isSyncing) return;
     setIsSyncing(true);
@@ -112,7 +167,7 @@ export default function NetKeepCafePOS() {
     }
   }, [API_URL, isSyncing]);
 
-  // 3. Health Check
+  // 4. Health Check
   const checkHealth = useCallback(async () => {
     const start = performance.now();
     try {
@@ -120,16 +175,20 @@ export default function NetKeepCafePOS() {
       const res = await fetch(healthUrl, { cache: "no-store" });
       if (res.ok) {
         setIsBackendOnline(true);
+        setHealthCheckStatus("online");
         setBackendLatency(Math.round(performance.now() - start));
-        // Auto trigger outbox sync when server is reachable
+        // Auto trigger outbox sync and menu refresh when server is reachable
         runSyncCycle();
+        syncMenuWithServer();
       } else {
         setIsBackendOnline(false);
+        setHealthCheckStatus("offline");
       }
     } catch {
       setIsBackendOnline(false);
+      setHealthCheckStatus("offline");
     }
-  }, [API_URL, runSyncCycle]);
+  }, [API_URL, runSyncCycle, syncMenuWithServer]);
 
   // 4. Manual Retry for a specific order
   const handleManualRetry = useCallback(async (orderId: string) => {
@@ -355,11 +414,25 @@ export default function NetKeepCafePOS() {
         <div className="flex items-center space-x-3 text-xs">
           {/* Edge Server Pill */}
           <div className="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700">
-            <span className={`w-2.5 h-2.5 rounded-full ${isBackendOnline ? "bg-emerald-400 animate-pulse" : "bg-rose-500"}`} />
-            <span className="text-slate-300">Server:</span>
-            <span className={isBackendOnline ? "text-emerald-400 font-semibold" : "text-rose-400 font-semibold"}>
-              {isBackendOnline ? `Online (${backendLatency}ms)` : "Offline (Local Dexie Mode)"}
-            </span>
+            {healthCheckStatus === "checking" ? (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-slate-300">Server:</span>
+                <span className="text-amber-400 font-medium">Connecting...</span>
+              </>
+            ) : isBackendOnline ? (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-slate-300">Server:</span>
+                <span className="text-emerald-400 font-semibold">Online ({backendLatency}ms)</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                <span className="text-slate-300">Server:</span>
+                <span className="text-rose-400 font-semibold">Offline (Local Dexie Mode)</span>
+              </>
+            )}
           </div>
 
           {/* Pending Outbox Sync Pill */}
@@ -390,7 +463,12 @@ export default function NetKeepCafePOS() {
 
           {/* Quick Refresh */}
           <button
-            onClick={() => { checkHealth(); loadLocalDatabase(); }}
+            onClick={() => {
+              setHealthCheckStatus("checking");
+              checkHealth();
+              loadLocalDatabase();
+              syncMenuWithServer();
+            }}
             title="Refresh local database & connectivity"
             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition cursor-pointer"
           >
@@ -496,75 +574,98 @@ export default function NetKeepCafePOS() {
                 </div>
               </div>
 
-              {/* Menu Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
-                {filteredMenu.map((item) => {
-                  const inCart = cart.find((c) => c.item.id === item.id);
-                  const isLow = item.stock > 0 && item.stock <= item.low_stock_threshold;
-                  const isOut = item.stock <= 0;
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`flex flex-col justify-between p-4 rounded-xl border bg-slate-900/80 transition hover:border-slate-600 ${
-                        isOut ? "border-rose-900/50 opacity-60" : "border-slate-800"
-                      }`}
+              {/* Menu Grid / Loading / Empty States */}
+              {isMenuLoading ? (
+                <div className="p-16 text-center text-slate-400 border border-slate-800 rounded-xl bg-slate-900/40 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-mono font-medium text-slate-300">Loading café menu items...</span>
+                </div>
+              ) : filteredMenu.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 border border-slate-800 rounded-xl bg-slate-900/40 space-y-3">
+                  <p className="text-sm font-semibold text-slate-300">No menu items found.</p>
+                  {(searchQuery || selectedCategory !== "All") ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-slate-500">No items match &quot;{searchQuery || selectedCategory}&quot;.</p>
+                      <button
+                        onClick={() => { setSearchQuery(""); setSelectedCategory("All"); }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                      >
+                        Clear Filters
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => loadLocalDatabase()}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition cursor-pointer"
                     >
-                      <div>
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="text-[10px] font-mono text-slate-500 uppercase">
-                              {item.sku}
+                      Reload Menu
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                  {filteredMenu.map((item) => {
+                    const inCart = cart.find((c) => c.item.id === item.id);
+                    const isLow = item.stock > 0 && item.stock <= item.low_stock_threshold;
+                    const isOut = item.stock <= 0;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex flex-col justify-between p-4 rounded-xl border bg-slate-900/80 transition hover:border-slate-600 ${
+                          isOut ? "border-rose-900/50 opacity-60" : "border-slate-800"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[10px] font-mono text-slate-500 uppercase">
+                                {item.sku}
+                              </span>
+                              <h3 className="font-bold text-slate-100 text-sm leading-tight mt-0.5">
+                                {item.name}
+                              </h3>
+                            </div>
+                            <span className="text-emerald-400 font-mono font-bold text-sm bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 whitespace-nowrap">
+                              {formatPaise(item.price_paise)}
                             </span>
-                            <h3 className="font-bold text-slate-100 text-sm leading-tight mt-0.5">
-                              {item.name}
-                            </h3>
                           </div>
-                          <span className="text-emerald-400 font-mono font-bold text-sm bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 whitespace-nowrap">
-                            {formatPaise(item.price_paise)}
-                          </span>
-                        </div>
 
-                        {item.description && (
-                          <p className="text-xs text-slate-400 mt-2 line-clamp-2">
-                            {item.description}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
-                        <div className="text-[11px] font-medium">
-                          {isOut ? (
-                            <span className="text-rose-400 font-semibold">Out of Stock</span>
-                          ) : isLow ? (
-                            <span className="text-amber-400 font-semibold">Only {item.stock} left</span>
-                          ) : (
-                            <span className="text-slate-400">{item.stock} in stock</span>
+                          {item.description && (
+                            <p className="text-xs text-slate-400 mt-2 line-clamp-2">
+                              {item.description}
+                            </p>
                           )}
                         </div>
 
-                        <button
-                          disabled={isOut}
-                          onClick={() => addToCart(item)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            isOut
-                              ? "bg-slate-800 text-slate-600 cursor-not-allowed"
-                              : inCart
-                              ? "bg-emerald-600 text-white hover:bg-emerald-500"
-                              : "bg-slate-800 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950 border border-slate-700"
-                          }`}
-                        >
-                          {inCart ? `In Cart (${inCart.quantity})` : "+ Add"}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                        <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+                          <div className="text-[11px] font-medium">
+                            {isOut ? (
+                              <span className="text-rose-400 font-semibold">Out of Stock</span>
+                            ) : isLow ? (
+                              <span className="text-amber-400 font-semibold">Only {item.stock} left</span>
+                            ) : (
+                              <span className="text-slate-400">{item.stock} in stock</span>
+                            )}
+                          </div>
 
-              {filteredMenu.length === 0 && (
-                <div className="p-12 text-center text-slate-500 border border-slate-800 rounded-xl bg-slate-900/40">
-                  No menu items found.
+                          <button
+                            disabled={isOut}
+                            onClick={() => addToCart(item)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                              isOut
+                                ? "bg-slate-800 text-slate-600 cursor-not-allowed"
+                                : inCart
+                                ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                                : "bg-slate-800 text-emerald-400 hover:bg-emerald-500 hover:text-slate-950 border border-slate-700"
+                            }`}
+                          >
+                            {inCart ? `In Cart (${inCart.quantity})` : "+ Add"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
