@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS cafes (
     total_stations INTEGER DEFAULT 16 CHECK (total_stations >= 0),
     edge_ip VARCHAR(45),
     is_active BOOLEAN DEFAULT TRUE NOT NULL,
+    status VARCHAR(32) DEFAULT 'ACTIVE' NOT NULL,
     last_ping TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
