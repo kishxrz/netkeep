@@ -13,9 +13,11 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
 # Database engine initialization
 if RAW_DATABASE_URL:
-    # Normalize postgres:// to postgresql:// for SQLAlchemy 2.0 compatibility
+    # Ensure PostgreSQL URLs explicitly use the postgresql+psycopg2:// dialect for psycopg2-binary
     if RAW_DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = RAW_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        DATABASE_URL = RAW_DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif RAW_DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = RAW_DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
     else:
         DATABASE_URL = RAW_DATABASE_URL
 
